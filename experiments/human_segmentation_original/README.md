@@ -29,3 +29,5 @@ or, with heat kernel signature features
 python human_segmentation_original.py --input_features=hks --evaluate  
 ```
 
+Add `--visualize` to either command to open a polyscope viewer after evaluation, showing the predicted segmentation, ground truth, and per-face errors on each test mesh.
+

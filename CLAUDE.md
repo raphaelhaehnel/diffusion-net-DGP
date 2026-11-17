@@ -8,22 +8,37 @@ DiffusionNet ("DiffusionNet: Discretization Agnostic Learning on Surfaces", Shar
 
 ## Setup
 
-- Environment: `conda env create --name diffusion_net -f environment.yml` (pinned old versions: Python 3.8, torch 1.8.1, numpy 1.20; the file is Linux-specific, so on Windows install the pip packages manually).
+- Environment: `conda env create --name diffusion_net -f environment.yml` (pinned old versions: Python 3.8, torch 1.8.1, numpy 1.20; the file is Linux-specific).
+- Windows setup in use: `.venv` (Python 3.10) with `torch==1.13.1+cu117` (from `--extra-index-url https://download.pytorch.org/whl/cu117`), `numpy<2`, `scipy<1.12`, `scikit-learn<1.4`, `robust-laplacian`, `potpourri3d`, `plyfile`, `polyscope`, `tqdm`. Stay on torch 1.x: the code uses `torch.lstsq` (removed in 2.0) and relies on `torch.load`'s old default of `weights_only=False`.
 - Needs a CUDA GPU; the code assumes `device = torch.device('cuda')`.
 - The package lives in `src/diffusion_net` and is not pip-installable. Experiment scripts import it via a `sys.path` insertion pointing at `../../src/`, so run them from inside their experiment directory.
 - Core native deps: `robust_laplacian` (Laplacian/mass), `potpourri3d` (geodesics), `scipy`/`sklearn`. Note `geometry.py` must import `scipy` before `torch` or it crashes on some platforms — keep that import order.
 
 ## Running experiments
 
-Each directory under `experiments/` has its own README with dataset download steps and commands. Scripts are run from within the experiment folder, e.g.:
+Each directory under `experiments/` has its own README with dataset download links and the exact unzip commands. Scripts are run from within the experiment folder, e.g.:
 
 ```
 cd experiments/functional_correspondence
 python functional_correspondence.py --train_dataset=faust --input_features=xyz
-python functional_correspondence.py --test_dataset=faust --input_features=xyz --load_model=pretrained_models/faust_xyz.pth   # evaluate pretrained (see --evaluate)
+python functional_correspondence.py --evaluate --test_dataset=faust --input_features=xyz --load_model=pretrained_models/faust_xyz.pth
 ```
 
-Pretrained `.pth` models are committed in each experiment's `pretrained_models/`. Datasets go in each experiment's `data/` (gitignored); computed operators are cached on disk under the data dir.
+Common conventions: `--input_features` is `xyz` or `hks`; `--evaluate` skips training and loads a pretrained model; operators are cached in `data/op_cache/`; `n_epoch`, `lr`, `k_eig` etc. are hard-coded at the top of each script (not flags). Each experiment's `data/` is gitignored.
+
+| Experiment | Dataset location (under the experiment dir) | Default features | Eval / pretrained | Trained model saved to |
+|---|---|---|---|---|
+| `classification_shrec11` | `data/original/raw` or `data/simplified/raw` (`--dataset_type`, default `original`; `--split_size` default 10) | hks | None: a random train/test split is drawn each run, so there's no eval mode or pretrained model by design | not saved |
+| `functional_correspondence` | `data/faust/`, `data/scape/` | hks | `--evaluate` **requires** `--load_model=PATH` (errors otherwise); `--train_dataset` is ignored when evaluating. Pretrained: `faust_{xyz,hks}.pth`, `scape_{xyz,hks}.pth` | `saved_models/{train_dataset}_{features}.pth` |
+| `human_segmentation_original` | `data/sig17_seg_benchmark` | hks | `--evaluate` loads `pretrained_models/human_seg_{features}_4x128.pth` | `data/saved_models/` |
+| `rna_mesh_segmentation` | `data/RNA-Surface-Segmentation-Dataset` (git clone) | xyz | `--evaluate` expects `pretrained_models/rna_mesh_seg_{features}_4x128.pth`, but that dir is gitignored and absent, so evaluating only works after you train a model and copy it there | `data/saved_models/` |
+| `sampling_invariance` | train: `data/train/MPI-FAUST/training/registrations/`; test: `data/test/` (clone of the discretization-robust benchmark, includes point clouds with normals) | xyz | `--evaluate` loads `pretrained_models/categorical_correspondence_xyz_4x256.pth` (xyz only) | `data/saved_models/` |
+
+Gotchas from the READMEs:
+- Functional correspondence computes all-pairs geodesic distances for its geodesic error metric. That is slow (minutes per dataset) the first time; after that it is cached. During training it runs on the test set after each epoch.
+- In sampling invariance, the per-epoch "accuracy" (exact vertex match) is just training feedback. The real metric is the geodesic error printed after the final epoch.
+- SHREC11 and human-segmentation results vary between runs (random split / no validation set; last-epoch accuracy is reported), so average over several runs.
+- The original SHREC11 data comes in a password-protected zip (`SHREC11@NIST`). The labels file `data/original/categories.txt` is the ground truth, and it is committed (along with `.empty` placeholder files).
 
 ## Architecture
 

@@ -17,6 +17,7 @@ from human_segmentation_original_dataset import HumanSegOrigDataset
 parser = argparse.ArgumentParser()
 parser.add_argument("--evaluate", action="store_true", help="evaluate using the pretrained model")
 parser.add_argument("--input_features", type=str, help="what features to use as input ('xyz' or 'hks') default: hks", default = 'hks')
+parser.add_argument("--visualize", action="store_true", help="show test set predictions in polyscope after the final evaluation")
 args = parser.parse_args()
 
 
@@ -151,8 +152,9 @@ def train_epoch(epoch):
     return train_acc
 
 
-# Do an evaluation pass on the test dataset 
-def test():
+# Do an evaluation pass on the test dataset
+# If `collect` is a list, (verts, faces, pred_labels, labels) for each mesh are appended to it
+def test(collect=None):
     
     model.eval()
     
@@ -193,8 +195,11 @@ def test():
             correct += this_correct
             total_num += this_num
 
+            if collect is not None:
+                collect.append(tuple(diffusion_net.utils.toNP(t) for t in (verts, faces, pred_labels, labels)))
+
     test_acc = correct / total_num
-    return test_acc 
+    return test_acc
 
 
 if train:
@@ -210,5 +215,31 @@ if train:
 
 
 # Test
-test_acc = test()
+vis_results = [] if args.visualize else None
+test_acc = test(collect=vis_results)
 print("Overall test accuracy: {:06.3f}%".format(100*test_acc))
+
+
+# Visualize predictions
+if args.visualize:
+    import polyscope as ps
+
+    ps.init()
+    ps.set_up_dir("y_up")
+    ps.set_ground_plane_mode("none")
+
+    # lay the meshes out in a grid (positions are normalized to unit scale)
+    n_per_row = 6
+    spacing = 2.5
+
+    for i, (verts, faces, pred_labels, labels) in enumerate(vis_results):
+        offset = np.array([spacing * (i % n_per_row), -spacing * (i // n_per_row), 0.])
+        acc = np.mean(pred_labels == labels)
+        print("  test mesh {:02d}: accuracy {:06.3f}%".format(i, 100*acc))
+
+        ps_mesh = ps.register_surface_mesh("mesh {:02d} ({:.1f}%)".format(i, 100*acc), verts + offset, faces)
+        ps_mesh.add_scalar_quantity("prediction", pred_labels, defined_on='faces', datatype='categorical', vminmax=(0, n_class-1), enabled=True)
+        ps_mesh.add_scalar_quantity("ground truth", labels, defined_on='faces', datatype='categorical', vminmax=(0, n_class-1))
+        ps_mesh.add_scalar_quantity("error", (pred_labels != labels).astype(float), defined_on='faces', cmap='reds', vminmax=(0, 1))
+
+    ps.show()
