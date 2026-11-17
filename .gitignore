@@ -4,6 +4,7 @@ build_debug/
 dist/
 *.pyc
 __pycache__/
+.idea/
 
 *.egg-info
 
