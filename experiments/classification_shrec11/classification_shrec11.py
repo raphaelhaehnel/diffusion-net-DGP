@@ -18,6 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--input_features", type=str, help="what features to use as input ('xyz' or 'hks') default: hks", default = 'hks')
 parser.add_argument("--dataset_type", type=str, help="which variant of the dataset to use ('original', or 'simplified') default: original", default = 'original')
 parser.add_argument("--split_size", type=int, help="how large of a training set per-class default: 10", default=10)
+parser.add_argument("--visualize", action="store_true", help="show test set predictions in polyscope after the final evaluation")
 args = parser.parse_args()
 
 # system things
@@ -160,8 +161,9 @@ def train_epoch(epoch):
     return train_acc
 
 
-# Do an evaluation pass on the test dataset 
-def test():
+# Do an evaluation pass on the test dataset
+# If `collect` is a list, (verts, faces, pred_label, label) for each mesh are appended to it
+def test(collect=None):
     
     model.eval()
     
@@ -201,8 +203,11 @@ def test():
             correct += this_correct
             total_num += 1
 
+            if collect is not None:
+                collect.append((diffusion_net.utils.toNP(verts), diffusion_net.utils.toNP(faces), pred_labels.item(), labels.item()))
+
     test_acc = correct / total_num
-    return test_acc 
+    return test_acc
 
 
 print("Training...")
@@ -213,5 +218,42 @@ for epoch in range(n_epoch):
     print("Epoch {} - Train overall: {:06.3f}%  Test overall: {:06.3f}%".format(epoch, 100*train_acc, 100*test_acc))
 
 # Test
-test_acc = test()
+vis_results = [] if args.visualize else None
+test_acc = test(collect=vis_results)
 print("Overall test accuracy: {:06.3f}%".format(100*test_acc))
+
+
+# Visualize predictions
+if args.visualize:
+    import polyscope as ps
+
+    class_names = test_dataset.class_names
+
+    print("Misclassified test meshes:")
+    for verts, faces, pred_label, label in vis_results:
+        if pred_label != label:
+            print("  {} predicted as {}".format(class_names[label], class_names[pred_label]))
+
+    ps.init()
+    ps.set_up_dir("y_up")
+    ps.set_ground_plane_mode("none")
+
+    # one row per true class (positions are normalized to unit scale)
+    spacing = 2.5
+    n_in_row = [0] * n_class
+    color_correct = (0.3, 0.75, 0.3)
+    color_wrong = (0.9, 0.2, 0.2)
+
+    for i, (verts, faces, pred_label, label) in enumerate(vis_results):
+        offset = np.array([spacing * n_in_row[label], -spacing * label, 0.])
+        n_in_row[label] += 1
+
+        is_correct = pred_label == label
+        if is_correct:
+            name = "{:03d} {}".format(i, class_names[label])
+        else:
+            name = "{:03d} {} -> predicted {}".format(i, class_names[label], class_names[pred_label])
+
+        ps.register_surface_mesh(name, verts + offset, faces, color=color_correct if is_correct else color_wrong)
+
+    ps.show()
