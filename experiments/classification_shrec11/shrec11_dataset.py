@@ -91,15 +91,14 @@ class Shrec11MeshDataset_Original(Dataset):
         for ind, label in enumerate(self.labels_list):
             self.labels_list[ind] = torch.tensor(label)
 
+        # Precompute operators
+        self.frames_list, self.massvec_list, self.L_list, self.evals_list, self.evecs_list, self.gradX_list, self.gradY_list = diffusion_net.geometry.get_all_operators(self.verts_list, self.faces_list, k_eig=self.k_eig, op_cache_dir=self.op_cache_dir)
+
     def __len__(self):
         return len(self.verts_list)
 
     def __getitem__(self, idx):
-        verts = self.verts_list[idx]
-        faces = self.faces_list[idx]
-        label = self.labels_list[idx]
-        frames, mass, L, evals, evecs, gradX, gradY = diffusion_net.geometry.get_operators(verts, faces, k_eig=self.k_eig, op_cache_dir=self.op_cache_dir)
-        return verts, faces, frames, mass, L, evals, evecs, gradX, gradY, label
+        return self.verts_list[idx], self.faces_list[idx], self.frames_list[idx], self.massvec_list[idx], self.L_list[idx], self.evals_list[idx], self.evecs_list[idx], self.gradX_list[idx], self.gradY_list[idx], self.labels_list[idx]
 
 class Shrec11MeshDataset_Simplified(Dataset):
 
