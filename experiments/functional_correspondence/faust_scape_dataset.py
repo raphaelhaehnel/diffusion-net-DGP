@@ -88,7 +88,7 @@ class FaustScapeDataset(Dataset):
             print("loading mesh " + str(mesh_files[iFile]))
 
             verts, faces = pp3d.read_mesh(mesh_files[iFile])
-            vts_file = np.loadtxt(vts_files[iFile]).astype(int) - 1 # convert from 1-based indexing
+            vts_file = np.loadtxt(vts_files[iFile]).astype(np.int64) - 1 # convert from 1-based indexing
 
             # to torch
             verts = torch.tensor(np.ascontiguousarray(verts)).float()
@@ -183,12 +183,13 @@ class FaustScapeDataset(Dataset):
         ]
 
         # Compute the ground-truth functional map between the pair
+        # .vts indices may be int32 (e.g. Windows / old caches); indexing requires int64
+        shape1[10], shape2[10] = shape1[10].long(), shape2[10].long()
         vts1, vts2 = shape1[10], shape2[10]
         evec_1, evec_2 = shape1[6][:, :self.n_fmap], shape2[6][:, :self.n_fmap]
         evec_1_a, evec_2_a = evec_1[vts1,:], evec_2[vts2,:]
-        solve_out = torch.lstsq(evec_2_a, evec_1_a)[0] # TODO replace with torch.linalg version in future torch
-        C_gt = solve_out[:evec_1_a.size(-1)].t()
-        resids = solve_out[evec_1_a.size(-1):]
+        # solve evec_1_a @ X = evec_2_a (torch.lstsq was removed in torch 1.13)
+        C_gt = torch.linalg.lstsq(evec_1_a, evec_2_a).solution.t()
 
         # Alternately, do it with numpy instead:
         # solve_out = np.linalg.lstsq(toNP(evec_1_a), toNP(evec_2_a), rcond=None)

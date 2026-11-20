@@ -787,8 +787,8 @@ def all_pairs_geodesic_worker(verts, faces, i):
     N = verts.shape[0]
 
     # TODO: this re-does a ton of work, since it is called independently each time. Some custom C++ code could surely make it faster.
-    sources = np.array([i])[:,np.newaxis]
-    targets = np.arange(N)[:,np.newaxis]
+    sources = np.array([i], dtype=faces.dtype)[:,np.newaxis] # igl needs index dtype == faces dtype (numpy defaults to int32 on Windows)
+    targets = np.arange(N, dtype=faces.dtype)[:,np.newaxis]
     dist_vec = igl.exact_geodesic(verts, faces, sources, targets)
     
     return dist_vec
@@ -859,7 +859,9 @@ def get_all_pairs_geodesic_distance(verts_np, faces_np, geodesic_cache_dir=None)
         N = verts_np.shape[0]
 
         try:
-            pool = Pool(None) # on 8 processors
+            # leave some cores free; override with DIFFUSION_NET_GEODESIC_WORKERS
+            n_workers = int(os.environ.get("DIFFUSION_NET_GEODESIC_WORKERS", max(1, (os.cpu_count() or 2) // 2)))
+            pool = Pool(n_workers)
             engine = AllPairsGeodesicEngine(verts_np, faces_np)
             outputs = pool.map(engine, range(N))
         finally: # To make sure processes are closed in the end, even if errors happen
