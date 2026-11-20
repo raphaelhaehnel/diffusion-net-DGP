@@ -40,6 +40,8 @@ python classification_shrec11.py --dataset_type=simplified --input_features=hks
 python classification_shrec11.py --dataset_type=simplified --input_features=xyz
 ```
 
+Add `--visualize` to any of these commands to open a polyscope viewer after the final evaluation. It shows every test mesh, one row per true class, in green if it was classified correctly and red if not. Misclassified meshes are also listed in the console, e.g. `dog1 predicted as horse`.
+
 There will be variance in the final accuracy, because the networks generally predict just 0-3 test models incorrectly, and the test split is randomized. Perform multiple runs to get a good sample!
 
 **Note:** This experiment is configured to generate a random test/train split on each run. For this reason, no evaluation mode or pretrained models are included to avoid potential mistakes of testing on a set which overlaps with the train set which was used for the model.
