@@ -21,3 +21,7 @@ or, with heat kernel signature features
 ```python
 python rna_mesh_segmentation.py --input_features=hks  
 ```
+
+### Visualization
+
+Add `--visualize` to open a polyscope viewer after the final evaluation. It shows every test mesh with the predicted per-vertex segmentation, the ground truth, and the per-vertex errors. The accuracy of each mesh is also printed to the console.

@@ -6,7 +6,7 @@ Run every command from inside its experiment folder (the scripts find `src/` thr
 .venv\Scripts\activate
 ```
 
-`--input_features` takes `xyz` or `hks`. Operators are cached in each experiment's `data/op_cache/`, so the first run is slower than later ones. `--visualize` (only in classification and human segmentation) opens polyscope with the test-set predictions after the final evaluation.
+`--input_features` takes `xyz` or `hks`. Operators are cached in each experiment's `data/op_cache/`, so the first run is slower than later ones. `--visualize` (in classification, human segmentation and RNA segmentation) opens polyscope with the test-set predictions after the final evaluation.
 
 ---
 
@@ -108,7 +108,11 @@ copy data\saved_models\rna_mesh_seg_xyz_4x128.pth pretrained_models\
 python rna_mesh_segmentation.py --evaluate --input_features=xyz
 ```
 
-There is no `--visualize` flag here.
+Add `--visualize` to any of these commands to open polyscope after the final evaluation. It shows all 136 test meshes in a grid with the per-vertex prediction, ground truth and errors (class 0 is the dataset's unlabeled class):
+
+```
+python rna_mesh_segmentation.py --evaluate --input_features=xyz --visualize
+```
 
 ---
 
