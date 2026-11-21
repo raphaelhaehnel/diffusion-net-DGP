@@ -221,6 +221,7 @@ if __name__ == "__main__":
             print("Epoch {} - Train overall: {:.5e}  Test overall: {:.5e}  Test geodesic error: {:.5e}".format(epoch, train_loss, test_loss, test_geodesic_error))
 
             print(" ==> saving last model to " + model_save_path)
+            os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
             torch.save(model.state_dict(), model_save_path)
 
 

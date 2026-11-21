@@ -237,6 +237,7 @@ if train:
         print("Epoch {} - Train overall: {:06.3f}%  Test overall: {:06.3f}%".format(epoch, 100*train_acc, 100*test_acc))
 
     print(" ==> saving last model to " + model_save_path)
+    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
     torch.save(model.state_dict(), model_save_path)
 
 
