@@ -197,7 +197,7 @@ class DiffusionNetBlock(nn.Module):
         self.mlp = MiniMLP([self.MLP_C] + self.mlp_hidden_dims + [self.C_width], dropout=self.dropout)
 
 
-    def forward(self, x_in, mass, L, evals, evecs, gradX, gradY):
+    def forward(self, x_in, mass, L, evals, evecs, gradX, gradY, gradXT=None, gradYT=None):
 
         # Manage dimensions
         B = x_in.shape[0] # batch dimension
@@ -216,8 +216,13 @@ class DiffusionNetBlock(nn.Module):
             x_grads = [] # Manually loop over the batch (if there is a batch dimension) since torch.mm() doesn't support batching
             for b in range(B):
                 # gradient after diffusion
-                x_gradX = torch.mm(gradX[b,...], x_diffuse[b,...])
-                x_gradY = torch.mm(gradY[b,...], x_diffuse[b,...])
+                # (gradX/gradY may be a batched tensor or a list of per-entry matrices; gradX[b] works for both)
+                if gradXT is not None:
+                    x_gradX = _SparseConstMM.apply(gradX[b], gradXT[b], x_diffuse[b,...])
+                    x_gradY = _SparseConstMM.apply(gradY[b], gradYT[b], x_diffuse[b,...])
+                else:
+                    x_gradX = torch.mm(gradX[b], x_diffuse[b,...])
+                    x_gradY = torch.mm(gradY[b], x_diffuse[b,...])
 
                 x_grads.append(torch.stack((x_gradX, x_gradY), dim=-1))
             x_grad = torch.stack(x_grads, dim=0)
@@ -239,6 +244,22 @@ class DiffusionNetBlock(nn.Module):
         x0_out = x0_out + x_in
 
         return x0_out
+
+
+class _SparseConstMM(torch.autograd.Function):
+    """
+    y = A @ x for a constant sparse A (no gradient w.r.t. A), with A^T given up front.
+    torch.mm's own backward rebuilds and coalesces A^T on every call, which dominates
+    the step time on large meshes; here it is computed once per forward pass and shared by all blocks.
+    """
+    @staticmethod
+    def forward(ctx, A, AT, x):
+        ctx.AT = AT
+        return torch.mm(A, x)
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        return None, None, torch.mm(ctx.AT, grad_out)
 
 
 class DiffusionNet(nn.Module):
@@ -343,6 +364,15 @@ class DiffusionNet(nn.Module):
         if x_in.shape[-1] != self.C_in: 
             raise ValueError("DiffusionNet was constructed with C_in={}, but x_in has last dim={}".format(self.C_in,x_in.shape[-1]))
         N = x_in.shape[-2]
+
+        # Keep the sparse gradient operators as a list of per-batch-entry 2D matrices: slicing a batched
+        # sparse tensor (gradX[b]) is expensive and would otherwise happen in every block, every step
+        if gradX is not None and gradX.is_sparse:
+            gradX_mats = [gradX] if gradX.dim() == 2 else [gradX[i] for i in range(gradX.shape[0])]
+            gradY_mats = [gradY] if gradY.dim() == 2 else [gradY[i] for i in range(gradY.shape[0])]
+        else:
+            gradX_mats = gradY_mats = None
+
         if len(x_in.shape) == 2:
             appended_batch_dim = True
 
@@ -352,8 +382,8 @@ class DiffusionNet(nn.Module):
             if L != None: L = L.unsqueeze(0)
             if evals != None: evals = evals.unsqueeze(0)
             if evecs != None: evecs = evecs.unsqueeze(0)
-            if gradX != None: gradX = gradX.unsqueeze(0)
-            if gradY != None: gradY = gradY.unsqueeze(0)
+            if gradX != None and gradX_mats is None: gradX = gradX.unsqueeze(0)
+            if gradY != None and gradY_mats is None: gradY = gradY.unsqueeze(0)
             if edges != None: edges = edges.unsqueeze(0)
             if faces != None: faces = faces.unsqueeze(0)
 
@@ -365,9 +395,18 @@ class DiffusionNet(nn.Module):
         # Apply the first linear layer
         x = self.first_lin(x_in)
       
+        # Transpose the (constant) gradient operators once, for the backward pass of every block
+        if gradX_mats is not None:
+            gradX, gradY = gradX_mats, gradY_mats
+        gradXT = gradYT = None
+        if (self.with_gradient_features and torch.is_grad_enabled() and gradX_mats is not None
+                and not (gradX_mats[0].requires_grad or gradY_mats[0].requires_grad)):
+            gradXT = [g.t().coalesce() for g in gradX_mats]
+            gradYT = [g.t().coalesce() for g in gradY_mats]
+
         # Apply each of the blocks
         for b in self.blocks:
-            x = b(x, mass, L, evals, evecs, gradX, gradY)
+            x = b(x, mass, L, evals, evecs, gradX, gradY, gradXT, gradYT)
         
         # Apply the last linear layer
         x = self.last_lin(x)
